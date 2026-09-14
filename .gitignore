@@ -1,0 +1,29 @@
+# Secrets - NEVER commit these
+.env
+service_account.json
+*.pem
+*.key
+
+# Logs generated at runtime
+sent_messages_log.txt
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.Python
+venv/
+env/
+.venv/
+*.egg-info/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editor/IDE
+.vscode/
+.idea/
