@@ -31,7 +31,11 @@ def send_whatsapp_message(to_phone: str, message: str) -> dict:
     try:
         from twilio.rest import Client
         client = Client(ACCOUNT_SID, AUTH_TOKEN)
-        to_formatted = to_phone if to_phone.startswith("whatsapp:") else f"whatsapp:{to_phone}"
+        # Normalize phone: ensure it starts with + for E.164 format
+        normalized = to_phone.strip()
+        if not normalized.startswith("+") and not normalized.startswith("whatsapp:"):
+            normalized = "+" + normalized
+        to_formatted = normalized if normalized.startswith("whatsapp:") else f"whatsapp:{normalized}"
         msg = client.messages.create(from_=FROM_NUMBER, to=to_formatted, body=message)
         _log(to_phone, message, status=f"SENT (sid={msg.sid})")
         return {"status": "sent", "sid": msg.sid, "to": to_phone}

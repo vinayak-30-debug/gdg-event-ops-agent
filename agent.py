@@ -12,15 +12,20 @@ load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 _client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
-MODEL_NAME = "gemini-3.6-flash"
+MODEL_NAME = "gemini-2.5-flash"
 
 
 def _call_gemini(prompt: str) -> str:
     """Single point of contact with Gemini, with basic error handling."""
     if not GEMINI_API_KEY or _client is None:
         raise RuntimeError("GEMINI_API_KEY not set. Add it to your .env file.")
-    interaction = _client.interactions.create(model=MODEL_NAME, input=prompt)
-    return interaction.output_text.strip()
+    try:
+        response = _client.models.generate_content(model=MODEL_NAME, contents=prompt)
+        return response.text.strip()
+    except Exception:
+        # Fallback to interactions API if models.generate_content has any issue
+        interaction = _client.interactions.create(model="gemini-3.6-flash", input=prompt)
+        return interaction.output_text.strip()
 
 
 def generate_event_package(event_title: str, event_type: str, date: str,
@@ -28,8 +33,10 @@ def generate_event_package(event_title: str, event_type: str, date: str,
                             speaker_name: str = "", extra_context: str = "") -> dict:
     """
     Generates a full event content package from a rough idea.
-    Returns a dict with: description, captions (list), speaker_email, whatsapp_reminders (list)
+    Runs 4 Gemini prompts concurrently in parallel to reduce waiting time from ~30s to ~5s.
+    Returns a dict with: description, captions (dict), speaker_email, reminders (dict)
     """
+    from concurrent.futures import ThreadPoolExecutor
 
     base_context = f"""
 Event Title: {event_title}
@@ -45,15 +52,12 @@ This event is organized by GDG MCET (Google Developer Group, MCET college chapte
 a student-run tech community.
 """
 
-    # 1. Event Description
     desc_prompt = f"""{base_context}
 Write a compelling event description (120-160 words) suitable for a college tech
 community event page. Tone: energetic, student-friendly, clear on value/takeaways.
 Include what attendees will learn or gain. Do not use markdown headers, just plain
 paragraph text ready to paste."""
-    description = _call_gemini(desc_prompt)
 
-    # 2. Social Media Captions
     captions_prompt = f"""{base_context}
 Write 3 short social media captions to promote this event, each for a different platform:
 1. Instagram (casual, emoji-friendly, punchy, under 60 words, include 3-4 relevant hashtags)
@@ -62,10 +66,7 @@ Write 3 short social media captions to promote this event, each for a different 
 
 Return ONLY valid JSON in this exact format, no markdown fences, no extra text:
 {{"instagram": "...", "linkedin": "...", "whatsapp": "..."}}"""
-    captions_raw = _call_gemini(captions_prompt)
-    captions = _safe_json_parse(captions_raw, fallback_keys=["instagram", "linkedin", "whatsapp"])
 
-    # 3. Speaker Outreach Email
     email_prompt = f"""{base_context}
 Write a warm, professional but concise speaker outreach/invitation email (150-200 words)
 inviting {speaker_name or "a potential speaker"} to speak at this event. Include:
@@ -75,9 +76,7 @@ inviting {speaker_name or "a potential speaker"} to speak at this event. Include
 - A clear next step / call to action
 Sign off as 'GDG MCET Organizing Team'. Return plain email text with a subject line
 on the first line prefixed with 'Subject: '."""
-    speaker_email = _call_gemini(email_prompt)
 
-    # 4. WhatsApp Reminder Schedule
     reminders_prompt = f"""{base_context}
 Create a WhatsApp reminder schedule of exactly 3 messages to be sent to registered
 attendees at different times before the event:
@@ -89,7 +88,20 @@ Each message should be under 50 words, friendly, with relevant emojis.
 
 Return ONLY valid JSON in this exact format, no markdown fences, no extra text:
 {{"week_before": "...", "day_before": "...", "hours_before": "..."}}"""
-    reminders_raw = _call_gemini(reminders_prompt)
+
+    # Run all 4 prompts concurrently
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        fut_desc = executor.submit(_call_gemini, desc_prompt)
+        fut_captions = executor.submit(_call_gemini, captions_prompt)
+        fut_email = executor.submit(_call_gemini, email_prompt)
+        fut_reminders = executor.submit(_call_gemini, reminders_prompt)
+
+        description = fut_desc.result()
+        captions_raw = fut_captions.result()
+        speaker_email = fut_email.result()
+        reminders_raw = fut_reminders.result()
+
+    captions = _safe_json_parse(captions_raw, fallback_keys=["instagram", "linkedin", "whatsapp"])
     reminders = _safe_json_parse(reminders_raw, fallback_keys=["week_before", "day_before", "hours_before"])
 
     return {
