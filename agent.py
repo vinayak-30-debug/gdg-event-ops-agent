@@ -15,17 +15,29 @@ _client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 MODEL_NAME = "gemini-2.5-flash"
 
 
-def _call_gemini(prompt: str) -> str:
-    """Single point of contact with Gemini, with basic error handling."""
+def _call_gemini(prompt: str, max_retries: int = 3) -> str:
+    """Single point of contact with Gemini, with retry logic for rate limits."""
+    import time
+
     if not GEMINI_API_KEY or _client is None:
         raise RuntimeError("GEMINI_API_KEY not set. Add it to your .env file.")
-    try:
-        response = _client.models.generate_content(model=MODEL_NAME, contents=prompt)
-        return response.text.strip()
-    except Exception:
-        # Fallback to interactions API if models.generate_content has any issue
-        interaction = _client.interactions.create(model="gemini-2.5-flash", input=prompt)
-        return interaction.output_text.strip()
+
+    for attempt in range(max_retries):
+        try:
+            response = _client.models.generate_content(model=MODEL_NAME, contents=prompt)
+            return response.text.strip()
+        except Exception as e:
+            error_str = str(e).lower()
+            # If rate limited, wait and retry
+            if "429" in error_str or "quota" in error_str or "too_many_requests" in error_str:
+                wait_time = (2 ** attempt) * 15  # 15s, 30s, 60s
+                if attempt < max_retries - 1:
+                    time.sleep(wait_time)
+                    continue
+            # Last attempt or non-rate-limit error: raise
+            if attempt == max_retries - 1:
+                raise
+            time.sleep(2)
 
 
 def generate_event_package(event_title: str, event_type: str, date: str,
@@ -89,8 +101,8 @@ Each message should be under 50 words, friendly, with relevant emojis.
 Return ONLY valid JSON in this exact format, no markdown fences, no extra text:
 {{"week_before": "...", "day_before": "...", "hours_before": "..."}}"""
 
-    # Run all 4 prompts concurrently
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    # Run prompts with limited concurrency to respect free-tier rate limits
+    with ThreadPoolExecutor(max_workers=2) as executor:
         fut_desc = executor.submit(_call_gemini, desc_prompt)
         fut_captions = executor.submit(_call_gemini, captions_prompt)
         fut_email = executor.submit(_call_gemini, email_prompt)
