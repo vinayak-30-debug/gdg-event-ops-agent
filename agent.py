@@ -24,7 +24,7 @@ def _call_gemini(prompt: str) -> str:
         return response.text.strip()
     except Exception:
         # Fallback to interactions API if models.generate_content has any issue
-        interaction = _client.interactions.create(model="gemini-3.6-flash", input=prompt)
+        interaction = _client.interactions.create(model="gemini-2.5-flash", input=prompt)
         return interaction.output_text.strip()
 
 
