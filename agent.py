@@ -13,7 +13,7 @@ load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 _client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
-MODEL_NAME = "gemini-2.0-flash"
+MODEL_NAME = "gemini-3.6-flash"
 
 
 def _call_gemini(prompt: str, max_retries: int = 1) -> str:
