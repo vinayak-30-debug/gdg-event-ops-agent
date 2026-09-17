@@ -12,7 +12,7 @@ load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 _client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
-MODEL_NAME = "gemini-2.5-flash"
+MODEL_NAME = "gemini-2.0-flash"
 
 
 def _call_gemini(prompt: str, max_retries: int = 3) -> str:
@@ -48,7 +48,6 @@ def generate_event_package(event_title: str, event_type: str, date: str,
     Runs 4 Gemini prompts concurrently in parallel to reduce waiting time from ~30s to ~5s.
     Returns a dict with: description, captions (dict), speaker_email, reminders (dict)
     """
-    from concurrent.futures import ThreadPoolExecutor
 
     base_context = f"""
 Event Title: {event_title}
@@ -101,17 +100,12 @@ Each message should be under 50 words, friendly, with relevant emojis.
 Return ONLY valid JSON in this exact format, no markdown fences, no extra text:
 {{"week_before": "...", "day_before": "...", "hours_before": "..."}}"""
 
-    # Run prompts with limited concurrency to respect free-tier rate limits
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        fut_desc = executor.submit(_call_gemini, desc_prompt)
-        fut_captions = executor.submit(_call_gemini, captions_prompt)
-        fut_email = executor.submit(_call_gemini, email_prompt)
-        fut_reminders = executor.submit(_call_gemini, reminders_prompt)
-
-        description = fut_desc.result()
-        captions_raw = fut_captions.result()
-        speaker_email = fut_email.result()
-        reminders_raw = fut_reminders.result()
+    # Run prompts sequentially — gemini-2.0-flash has generous limits (1500 RPM)
+    # but sequential is safer and still fast (~10s total)
+    description = _call_gemini(desc_prompt)
+    captions_raw = _call_gemini(captions_prompt)
+    speaker_email = _call_gemini(email_prompt)
+    reminders_raw = _call_gemini(reminders_prompt)
 
     captions = _safe_json_parse(captions_raw, fallback_keys=["instagram", "linkedin", "whatsapp"])
     reminders = _safe_json_parse(reminders_raw, fallback_keys=["week_before", "day_before", "hours_before"])
