@@ -8,6 +8,7 @@ import agent
 import sheets
 import whatsapp
 import forms
+import event_store
 
 # ─── Page Config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -118,6 +119,56 @@ st.markdown("""
         border-radius: 8px;
         padding: 0.75rem 1rem;
     }
+
+    /* Status badges */
+    .status-draft {
+        background: rgba(251, 188, 4, 0.15);
+        color: #fdd663;
+        padding: 0.2rem 0.6rem;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        border: 1px solid rgba(251, 188, 4, 0.3);
+    }
+    .status-upcoming {
+        background: rgba(52, 168, 83, 0.15);
+        color: #81c995;
+        padding: 0.2rem 0.6rem;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        border: 1px solid rgba(52, 168, 83, 0.3);
+    }
+    .status-past {
+        background: rgba(154, 160, 166, 0.15);
+        color: #9aa0a6;
+        padding: 0.2rem 0.6rem;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        border: 1px solid rgba(154, 160, 166, 0.3);
+    }
+    .event-card {
+        background: #1a1f29;
+        border: 1px solid #2d333b;
+        border-radius: 10px;
+        padding: 1.25rem;
+        margin-bottom: 0.75rem;
+        transition: border-color 0.2s ease;
+    }
+    .event-card:hover {
+        border-color: #4285F4;
+    }
+    .event-card h4 {
+        margin: 0 0 0.4rem 0;
+        font-size: 1rem;
+        color: #e6edf3;
+    }
+    .event-card .event-meta {
+        font-size: 0.82rem;
+        color: #8b949e;
+        margin: 0;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -146,6 +197,8 @@ nav_options = [
     "📄 Event Content",
     "📝 Attendee Registration",
     "📊 RSVPs & Broadcast",
+    "📁 Draft Events",
+    "🕘 Past Events",
 ]
 
 # Ensure current page in options
@@ -218,8 +271,14 @@ if selected_page == "⚡ Event Setup":
                             "audience": audience,
                             "speaker": speaker,
                         }
+                        # Auto-save as draft
+                        event_store.save_event(
+                            meta=st.session_state.event_meta,
+                            package=pkg,
+                            status="draft",
+                        )
                         st.success("✅ Event package generated in ~8 seconds!")
-                        st.info("👉 Click on the **'📄 Event Content'** tab above to view and copy your content.")
+                        st.info("👉 Click on the **'📄 Event Content'** tab above to view and copy your content.  \nThis event has been saved as a **Draft** — find it under the 📁 Draft Events tab.")
                     except Exception as err:
                         st.error(f"Generation error: {err}")
 
@@ -459,6 +518,153 @@ elif selected_page == "📊 RSVPs & Broadcast":
 
         except Exception as e:
             st.error(f"Error reading Google Sheet: {e}")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# PAGE 5: DRAFT EVENTS
+# ──────────────────────────────────────────────────────────────────────────────
+elif selected_page == "📁 Draft Events":
+    st.markdown("### 📁 Draft Events")
+    st.caption("Events generated but not yet published. Review, publish, or discard drafts here.")
+
+    drafts = event_store.get_draft_events()
+
+    if not drafts:
+        st.info("No draft events yet. Generate an event from the **⚡ Event Setup** tab to see it here.")
+    else:
+        st.markdown(f"**{len(drafts)} draft(s)** saved")
+        for i, ev in enumerate(drafts):
+            with st.expander(f"📝 {ev.get('title', 'Untitled Event')}  —  {ev.get('date', 'No date')}", expanded=(i == 0)):
+                col_info, col_actions = st.columns([3, 1])
+
+                with col_info:
+                    st.markdown(f"""
+                    - **Format:** {ev.get('event_type', '—')}
+                    - **Date:** {ev.get('date', '—')} ({ev.get('time', '—')})
+                    - **Venue:** {ev.get('venue', '—')}
+                    - **Audience:** {ev.get('audience', '—')}
+                    - **Speaker:** {ev.get('speaker', 'TBD')}
+                    - **Created:** {ev.get('created_at', '—')[:16]}
+                    """)
+
+                    # Show generated content in sub-tabs
+                    pkg = ev.get("package", {})
+                    if pkg:
+                        subtabs = st.tabs(["📝 Description", "📱 Captions", "✉️ Email", "⏰ Reminders"])
+                        with subtabs[0]:
+                            st.text_area("Description", value=pkg.get("description", ""), height=150, key=f"draft_desc_{ev['id']}", label_visibility="collapsed")
+                        with subtabs[1]:
+                            captions = pkg.get("captions", {})
+                            st.markdown("**Instagram:**")
+                            st.text(captions.get("instagram", "—"))
+                            st.markdown("**LinkedIn:**")
+                            st.text(captions.get("linkedin", "—"))
+                            st.markdown("**WhatsApp:**")
+                            st.text(captions.get("whatsapp", "—"))
+                        with subtabs[2]:
+                            st.text_area("Speaker Email", value=pkg.get("speaker_email", ""), height=150, key=f"draft_email_{ev['id']}", label_visibility="collapsed")
+                        with subtabs[3]:
+                            reminders = pkg.get("reminders", {})
+                            r1, r2, r3 = st.columns(3)
+                            r1.info(f"**1 Week:**\n{reminders.get('week_before', '—')}")
+                            r2.info(f"**1 Day:**\n{reminders.get('day_before', '—')}")
+                            r3.info(f"**2 Hours:**\n{reminders.get('hours_before', '—')}")
+
+                with col_actions:
+                    st.markdown("**Actions**")
+                    if st.button("✅ Publish", key=f"pub_{ev['id']}", use_container_width=True):
+                        event_store.update_event_status(ev["id"], "upcoming")
+                        st.success("Event published!")
+                        st.rerun()
+                    if st.button("🗑️ Delete", key=f"del_{ev['id']}", use_container_width=True):
+                        event_store.delete_event(ev["id"])
+                        st.warning("Draft deleted.")
+                        st.rerun()
+                    if st.button("📄 Load Content", key=f"load_{ev['id']}", use_container_width=True, help="Load this event's content into the Content tab"):
+                        st.session_state.package = ev.get("package")
+                        st.session_state.event_meta = {
+                            k: ev.get(k) for k in ["title", "date", "event_type", "time", "venue", "audience", "speaker"]
+                        }
+                        st.session_state.current_page = "📄 Event Content"
+                        st.rerun()
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# PAGE 6: PAST EVENTS
+# ──────────────────────────────────────────────────────────────────────────────
+elif selected_page == "🕘 Past Events":
+    st.markdown("### 🕘 Past Events")
+    st.caption("Archive of completed GDG MCET events. Review what was organized and the content that was generated.")
+
+    past = event_store.get_past_events()
+    upcoming = event_store.get_upcoming_events()
+
+    # Also show upcoming events in a separate section
+    if upcoming:
+        st.markdown(f"#### 🟢 Upcoming ({len(upcoming)})")
+        for ev in upcoming:
+            with st.expander(f"📅 {ev.get('title', 'Untitled')}  —  {ev.get('date', '')} ({ev.get('time', '')})"):
+                st.markdown(f"""
+                - **Format:** {ev.get('event_type', '—')}
+                - **Venue:** {ev.get('venue', '—')}
+                - **Audience:** {ev.get('audience', '—')}
+                - **Speaker:** {ev.get('speaker', 'TBD')}
+                """)
+
+                pkg = ev.get("package", {})
+                if pkg.get("description"):
+                    st.markdown("**Description:**")
+                    st.text(pkg["description"])
+
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    if st.button("🕘 Mark as Past", key=f"past_{ev['id']}", use_container_width=True):
+                        event_store.update_event_status(ev["id"], "past")
+                        st.rerun()
+                with col_b:
+                    if st.button("📄 Load Content", key=f"load_up_{ev['id']}", use_container_width=True):
+                        st.session_state.package = ev.get("package")
+                        st.session_state.event_meta = {
+                            k: ev.get(k) for k in ["title", "date", "event_type", "time", "venue", "audience", "speaker"]
+                        }
+                        st.session_state.current_page = "📄 Event Content"
+                        st.rerun()
+        st.divider()
+
+    if not past:
+        st.info("No past events recorded yet. Events are automatically moved here once their date passes, or you can mark them manually.")
+    else:
+        st.markdown(f"#### 📋 Completed Events ({len(past)})")
+        for ev in past:
+            with st.expander(f"🏁 {ev.get('title', 'Untitled')}  —  {ev.get('date', '')}"):
+                st.markdown(f"""
+                - **Format:** {ev.get('event_type', '—')}
+                - **Date:** {ev.get('date', '—')} ({ev.get('time', '—')})
+                - **Venue:** {ev.get('venue', '—')}
+                - **Audience:** {ev.get('audience', '—')}
+                - **Speaker:** {ev.get('speaker', 'TBD')}
+                """)
+
+                pkg = ev.get("package", {})
+                if pkg.get("description"):
+                    st.markdown("**Generated Description:**")
+                    st.text(pkg["description"])
+
+                captions = pkg.get("captions", {})
+                if captions:
+                    st.markdown("**Captions Used:**")
+                    for platform, text in captions.items():
+                        st.markdown(f"*{platform.title()}:*")
+                        st.text(text)
+
+                if st.button("📄 Load Content", key=f"load_past_{ev['id']}", use_container_width=True, help="Load this event's content into the Content tab for reuse"):
+                    st.session_state.package = ev.get("package")
+                    st.session_state.event_meta = {
+                        k: ev.get(k) for k in ["title", "date", "event_type", "time", "venue", "audience", "speaker"]
+                    }
+                    st.session_state.current_page = "📄 Event Content"
+                    st.rerun()
+
 
 st.divider()
 st.caption("GDG MCET • Organizer Operations Agent")

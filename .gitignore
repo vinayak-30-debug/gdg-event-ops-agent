@@ -4,8 +4,9 @@ service_account.json
 *.pem
 *.key
 
-# Logs generated at runtime
+# Logs and runtime data
 sent_messages_log.txt
+events_store.json
 
 # Python
 __pycache__/
