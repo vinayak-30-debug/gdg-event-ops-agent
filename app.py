@@ -134,7 +134,7 @@ st.markdown("""
 <div class="gdg-header">
     <div class="gdg-title-box">
         <h1>GDG MCET Event Platform</h1>
-        <p>Google Developer Groups on Campus • MCET Chapter</p>
+        <p>Google Developer Groups on Campus • MCET</p>
     </div>
     <div class="gdg-badge">Organizer Dashboard</div>
 </div>
@@ -461,4 +461,4 @@ elif selected_page == "📊 RSVPs & Broadcast":
             st.error(f"Error reading Google Sheet: {e}")
 
 st.divider()
-st.caption("GDG MCET Chapter • Organizer Operations Agent")
+st.caption("GDG MCET • Organizer Operations Agent")
