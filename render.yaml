@@ -1,0 +1,34 @@
+# render.yaml — Render Infrastructure-as-Code Blueprint
+# Deploy via: https://render.com/deploy → connect your GitHub repo
+# Or manually create a Web Service and point to this repo.
+
+services:
+  - type: web
+    name: gdg-event-agent
+    runtime: python
+    region: oregon
+    plan: free
+    buildCommand: bash build.sh
+    startCommand: streamlit run app.py
+    envVars:
+      # Required — Gemini API key for content generation
+      - key: GEMINI_API_KEY
+        sync: false  # set manually in Render dashboard
+
+      # Optional — paste full JSON content of your service_account.json
+      - key: GOOGLE_SERVICE_ACCOUNT_JSON
+        sync: false
+
+      # Optional — Google Sheets config
+      - key: GOOGLE_SHEETS_CREDS_PATH
+        value: service_account.json
+      - key: GOOGLE_SHEET_NAME
+        value: GDG Event RSVPs
+
+      # Optional — Twilio WhatsApp credentials
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_WHATSAPP_FROM
+        value: "whatsapp:+14155238886"
